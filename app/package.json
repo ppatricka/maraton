@@ -12,7 +12,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "bcryptjs": "^2.4.3",
+    "bcryptjs": "^3.0.3",
     "cookie-session": "^2.1.0",
     "ejs": "^3.1.10",
     "express": "^4.21.2",
