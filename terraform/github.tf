@@ -28,7 +28,9 @@ resource "aws_iam_role" "github_deploy" {
         StringEquals = {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
           # Only workflows running on the main branch of this repo (not forks, not PRs).
-          "token.actions.githubusercontent.com:sub" = "repo:${var.github_repository}:ref:refs/heads/main"
+          # GitHub's immutable subject format includes the owner and repo IDs, so the trust
+          # can't be hijacked by someone re-registering the same user/repo names.
+          "token.actions.githubusercontent.com:sub" = "${var.github_oidc_subject_prefix}:ref:refs/heads/main"
         }
       }
     }]
