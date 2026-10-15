@@ -1,0 +1,23 @@
+<%- include('partials/header') %>
+<section class="auth">
+  <div class="auth-copy">
+    <span class="kicker">tu diario de series</span>
+    <h1>Start your diary.</h1>
+    <span class="sticker">every episode, every season</span>
+  </div>
+  <form method="post" action="/register" class="card form">
+    <% if (error) { %><p class="error"><%= error %></p><% } %>
+    <label>Display name
+      <input name="displayName" value="<%= displayName %>" required maxlength="40" autocomplete="nickname">
+    </label>
+    <label>Email
+      <input type="email" name="email" value="<%= email %>" required autocomplete="email">
+    </label>
+    <label>Password (at least 8 characters)
+      <input type="password" name="password" required minlength="8" autocomplete="new-password">
+    </label>
+    <button class="btn">Create account</button>
+    <p class="muted" style="margin: 0">Already have one? <a href="/login">Sign in</a></p>
+  </form>
+</section>
+<%- include('partials/footer') %>

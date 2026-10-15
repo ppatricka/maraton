@@ -1,0 +1,24 @@
+# Exposes the app to the internet. The AWS Load Balancer Controller sees this
+# Ingress and creates an internet-facing Application Load Balancer for it.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: maraton
+  namespace: maraton
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing # public ALB in the public subnets
+    alb.ingress.kubernetes.io/target-type: ip # ALB sends traffic straight to pod IPs
+    alb.ingress.kubernetes.io/healthcheck-path: /healthz
+    alb.ingress.kubernetes.io/tags: Project=maraton,Purpose=wiz-technical-exercise
+spec:
+  ingressClassName: alb
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: maraton
+                port:
+                  name: http

@@ -1,0 +1,24 @@
+# The identity the app's pods run as inside Kubernetes.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: maraton
+  namespace: maraton
+---
+# INTENTIONAL WEAKNESS (required by the exercise): the app's service account is
+# bound to cluster-admin, so anyone who compromises the web app can read every
+# Secret, create privileged pods, and control the whole cluster.
+# Check it with:
+#   kubectl auth can-i '*' '*' --as=system:serviceaccount:maraton:maraton
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: maraton-cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: maraton
+    namespace: maraton
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin

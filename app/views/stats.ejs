@@ -1,0 +1,62 @@
+<%- include('partials/header') %>
+<section class="hero">
+  <div>
+    <span class="kicker">straight from MongoDB</span>
+    <h1>Your stats.</h1>
+  </div>
+</section>
+
+<section class="tiles">
+  <div class="card tile"><span class="tile-value"><%= totals.shows %></span><span class="tile-label">Shows tracked</span></div>
+  <div class="card tile"><span class="tile-value"><%= statusCounts['Completed'] %></span><span class="tile-label">Finished</span></div>
+  <div class="card tile"><span class="tile-value"><%= totals.favorites %></span><span class="tile-label">Favorites</span></div>
+  <div class="card tile">
+    <span class="tile-value"><%= totals.avgRating ? totals.avgRating.toFixed(1) : '–' %></span>
+    <span class="tile-label">Average rating</span>
+  </div>
+</section>
+
+<div class="stat-columns">
+  <section class="card">
+    <h2>By status</h2>
+    <ul class="bars">
+      <% var maxStatus = Math.max.apply(null, statuses.map(function (s) { return statusCounts[s]; }).concat([1])); %>
+      <% statuses.forEach(function (s) { %>
+      <li>
+        <span class="bar-label"><%= statusLabels[s] %></span>
+        <span class="bar-track"><span class="bar-fill" style="width: <%= Math.round(statusCounts[s] / maxStatus * 100) %>%"></span></span>
+        <span class="bar-value"><%= statusCounts[s] %></span>
+      </li>
+      <% }) %>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>Top genres</h2>
+    <% if (!genres.length) { %><p class="muted">Add genres to your shows to see this.</p><% } %>
+    <ul class="bars">
+      <% genres.forEach(function (g) { %>
+      <li>
+        <span class="bar-label"><%= g._id %></span>
+        <span class="bar-track"><span class="bar-fill" style="width: <%= Math.round(g.count / genres[0].count * 100) %>%"></span></span>
+        <span class="bar-value"><%= g.count %></span>
+      </li>
+      <% }) %>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>Where you watch</h2>
+    <% if (!platforms.length) { %><p class="muted">Add platforms to your shows to see this.</p><% } %>
+    <ul class="bars">
+      <% platforms.forEach(function (p) { %>
+      <li>
+        <span class="bar-label"><%= p._id %></span>
+        <span class="bar-track"><span class="bar-fill" style="width: <%= Math.round(p.count / platforms[0].count * 100) %>%"></span></span>
+        <span class="bar-value"><%= p.count %></span>
+      </li>
+      <% }) %>
+    </ul>
+  </section>
+</div>
+<%- include('partials/footer') %>

@@ -1,0 +1,21 @@
+{
+  "name": "maraton",
+  "version": "1.0.0",
+  "description": "Maratón: a TV diary. Track episodes, rate shows, pin your Top 4. Built for the Wiz technical exercise.",
+  "private": true,
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "seed": "node seed.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cookie-session": "^2.1.0",
+    "ejs": "^3.1.10",
+    "express": "^4.21.2",
+    "mongodb": "^6.10.0"
+  }
+}

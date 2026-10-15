@@ -1,0 +1,5 @@
+# Everything for the Maratón app lives in its own namespace.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: maraton

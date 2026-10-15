@@ -1,0 +1,89 @@
+#!/bin/bash
+# Runs once at first boot (EC2 user data, executed by cloud-init as root).
+# Rendered by Terraform templatefile(): the dollar-brace placeholders are filled in by Terraform.
+# Progress and errors: /var/log/cloud-init-output.log on the VM.
+set -euo pipefail  # no -x: it would print the passwords into the cloud-init log
+
+export DEBIAN_FRONTEND=noninteractive
+
+# --- 1. Install MongoDB 4.4 (pinned to the last 4.4 release) and the AWS CLI ---
+apt-get update
+apt-get install -y gnupg curl awscli
+
+curl -fsSL https://www.mongodb.org/static/pgp/server-4.4.asc \
+  | gpg --dearmor -o /usr/share/keyrings/mongodb-server-4.4.gpg
+echo "deb [ arch=amd64 signed-by=/usr/share/keyrings/mongodb-server-4.4.gpg ] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/4.4 multiverse" \
+  > /etc/apt/sources.list.d/mongodb-org-4.4.list
+
+apt-get update
+MONGO_VERSION=4.4.29
+apt-get install -y \
+  mongodb-org=$MONGO_VERSION mongodb-org-server=$MONGO_VERSION \
+  mongodb-org-shell=$MONGO_VERSION mongodb-org-mongos=$MONGO_VERSION \
+  mongodb-org-tools=$MONGO_VERSION
+
+# Stop unattended upgrades from moving MongoDB off 4.4.
+apt-mark hold mongodb-org mongodb-org-server mongodb-org-shell mongodb-org-mongos mongodb-org-tools
+
+# --- 2. Configure: listen on all interfaces (the security group limits who can
+#        connect) and require authentication -------------------------------------
+cat > /etc/mongod.conf <<'EOF'
+storage:
+  dbPath: /var/lib/mongodb
+  journal:
+    enabled: true
+systemLog:
+  destination: file
+  logAppend: true
+  path: /var/log/mongodb/mongod.log
+net:
+  port: 27017
+  bindIp: 0.0.0.0
+security:
+  authorization: enabled
+EOF
+
+systemctl enable mongod
+systemctl start mongod
+
+# Wait for mongod to accept connections.
+for i in $(seq 1 30); do
+  mongo --quiet --eval 'db.runCommand({ ping: 1 })' && break
+  sleep 2
+done
+
+# --- 3. Create users. With auth on and no users yet, MongoDB's "localhost
+#        exception" allows creating the first (admin) user from this machine. --
+mongo admin --quiet --eval '
+  db.createUser({ user: "admin", pwd: "${admin_password}", roles: [ "root" ] })'
+
+mongo admin --quiet -u admin -p '${admin_password}' --eval '
+  db.getSiblingDB("${app_database}").createUser({
+    user: "${app_database}", pwd: "${app_password}",
+    roles: [ { role: "readWrite", db: "${app_database}" } ]
+  })'
+
+# --- 4. Daily backup to S3 ------------------------------------------------------
+cat > /usr/local/bin/mongo-backup.sh <<'EOF'
+#!/bin/bash
+# Dumps all databases (gzip archive) and uploads it to the backup bucket.
+# AWS credentials come from the VM's instance role, not from this file.
+set -euo pipefail
+STAMP=$(date -u +%Y-%m-%dT%H%M%SZ)
+FILE=/tmp/mongodb-backup-$STAMP.archive.gz
+mongodump --quiet --username admin --password '${admin_password}' \
+  --authenticationDatabase admin --archive="$FILE" --gzip
+aws s3 cp "$FILE" "s3://${backup_bucket}/backups/" --region ${aws_region}
+rm -f "$FILE"
+echo "$(date -u) backup uploaded: $(basename "$FILE")"
+EOF
+chmod 700 /usr/local/bin/mongo-backup.sh
+
+# Every day at 03:00 UTC; output goes to /var/log/mongo-backup.log.
+echo "0 3 * * * root /usr/local/bin/mongo-backup.sh >> /var/log/mongo-backup.log 2>&1" \
+  > /etc/cron.d/mongo-backup
+
+# Take a first backup now, so the bucket has something in it from day one.
+/usr/local/bin/mongo-backup.sh >> /var/log/mongo-backup.log 2>&1
+
+echo "MongoDB setup complete"

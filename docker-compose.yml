@@ -1,0 +1,32 @@
+# Local development only: runs Maratón against the same outdated MongoDB
+# major version (4.4) that the exercise VM will run.
+#   docker compose up --build
+#   docker compose run --rm app node seed.js
+# Then open http://localhost:3000 and sign in as patricia@maraton.demo / maraton-demo
+services:
+  mongo:
+    image: mongo:4.4
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: local-dev-only
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+
+  app:
+    build:
+      context: ./app
+      args:
+        CANDIDATE_NAME: "Patricia Rojas Perez"
+    environment:
+      MONGODB_URI: mongodb://admin:local-dev-only@mongo:27017/maraton?authSource=admin
+      SESSION_SECRET: local-dev-session-secret
+    ports:
+      - "3000:3000"
+    depends_on:
+      - mongo
+    restart: on-failure
+
+volumes:
+  mongo-data:

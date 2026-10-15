@@ -1,0 +1,71 @@
+# Runs the web app: 2 copies (replicas) spread over the nodes.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: maraton
+  namespace: maraton
+  labels:
+    app: maraton
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: maraton
+  template:
+    metadata:
+      labels:
+        app: maraton
+    spec:
+      serviceAccountName: maraton # the cluster-admin identity from rbac.yaml
+      # Pod-level hardening (flagged by the Trivy scan, KSV-0118). Runs as the image's
+      # "node" user; Kubernetes can only verify non-root from a numeric UID.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault # the container runtime's default syscall filter
+      containers:
+        - name: maraton
+          # Repository and tag are set in kustomization.yaml (the pipeline updates the tag).
+          image: maraton
+          ports:
+            - name: http
+              containerPort: 3000
+          # MONGODB_URI and SESSION_SECRET come from the "maraton-env" Secret, which is
+          # created with kubectl (never committed to git). See k8s/README.md.
+          env:
+            - name: MONGODB_URI
+              valueFrom:
+                secretKeyRef:
+                  name: maraton-env
+                  key: MONGODB_URI
+            - name: SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: maraton-env
+                  key: SESSION_SECRET
+          # "ready" (/readyz checks MongoDB too) = send it traffic; "live" (/healthz) = restart if it hangs.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true # the app never writes to disk (Trivy KSV-0014)
+            capabilities:
+              drop: ["ALL"]

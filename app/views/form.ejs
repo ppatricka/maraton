@@ -1,0 +1,62 @@
+<%- include('partials/header') %>
+<section class="narrow">
+  <h1 style="font-size: clamp(2.2rem, 6vw, 3.5rem)"><%= heading %></h1>
+  <% if (error) { %><p class="error"><%= error %></p><% } %>
+  <form method="post" action="<%= action %>" class="card form grid">
+    <label class="span-2">Title
+      <input name="title" value="<%= show.title || '' %>" required maxlength="120" autofocus>
+    </label>
+    <label>Platform
+      <input name="platform" value="<%= show.platform || '' %>" maxlength="60" placeholder="Netflix, HBO Max, Apple TV+…">
+    </label>
+    <label>Genre
+      <input name="genre" value="<%= show.genre || '' %>" maxlength="40" placeholder="Drama, Comedy, Thriller…">
+    </label>
+    <label>Year it premiered
+      <input type="number" name="year" min="1940" max="2100" value="<%= show.year || '' %>">
+    </label>
+    <label>Total seasons
+      <input type="number" name="totalSeasons" min="1" max="100" value="<%= show.totalSeasons || '' %>">
+    </label>
+    <label>Status
+      <select name="status">
+        <% statuses.forEach(function (s) { %>
+        <option value="<%= s %>" <%= show.status === s ? 'selected' : '' %>><%= s %></option>
+        <% }) %>
+      </select>
+    </label>
+    <label>Rating
+      <select name="rating">
+        <option value="">No rating yet</option>
+        <% for (var r = 0.5; r <= 5; r += 0.5) { %>
+        <option value="<%= r %>" <%= show.rating === r ? 'selected' : '' %>><%= stars(r) %> (<%= r %>)</option>
+        <% } %>
+      </select>
+    </label>
+    <label>Current season
+      <input type="number" name="season" min="1" max="100" value="<%= show.progress ? show.progress.season : 1 %>">
+    </label>
+    <label>Last episode watched
+      <input type="number" name="episode" min="0" max="500" value="<%= show.progress ? show.progress.episode : 0 %>">
+    </label>
+    <label class="span-2">Review
+      <textarea name="review" rows="4" maxlength="1000" placeholder="What would you tell a friend about it?"><%= show.review || '' %></textarea>
+    </label>
+    <label class="check span-2">
+      <input type="checkbox" name="favorite" <%= show.favorite ? 'checked' : '' %>>
+      All-time favorite (your top-rated favorites make the Top 4)
+    </label>
+    <div class="actions span-2">
+      <button class="btn">Save</button>
+      <a href="/" class="link">Cancel</a>
+    </div>
+  </form>
+
+  <% if (show._id) { %>
+  <form method="post" action="/shows/<%= show._id %>/delete" class="danger-zone"
+        onsubmit="return confirm('Remove this show from your diary?')">
+    <button class="link danger">Remove from diary</button>
+  </form>
+  <% } %>
+</section>
+<%- include('partials/footer') %>

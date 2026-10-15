@@ -1,0 +1,13 @@
+# A stable internal address for the app's pods (they come and go; this doesn't).
+apiVersion: v1
+kind: Service
+metadata:
+  name: maraton
+  namespace: maraton
+spec:
+  selector:
+    app: maraton
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

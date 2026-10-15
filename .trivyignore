@@ -1,0 +1,37 @@
+# -----------------------------------------------------------------------------
+# Accepted risks for the Trivy IaC scan gate.
+#
+# Every entry here is a finding the scanner is RIGHT about. The Wiz technical
+# exercise requires these weaknesses on purpose; each one is documented with
+# why it's accepted and what the production fix would be.
+# Anything NOT listed here (HIGH/CRITICAL) fails the pipeline.
+# The full list of findings, ignored ones included, is in the GitHub Security tab.
+# -----------------------------------------------------------------------------
+
+# --- Backup bucket: public read + public listing (required by the exercise) ---
+# Fix: keep all four Block Public Access settings on; share backups via
+# short-lived presigned URLs or cross-account access only.
+AWS-0086
+AWS-0087
+AWS-0091
+AWS-0093
+
+# --- Backup bucket encrypted with SSE-S3, not a customer-managed KMS key ---
+# A KMS key would make anonymous reads fail, breaking the required public access.
+# Fix: SSE-KMS with a CMK, once the bucket is private.
+AWS-0132
+
+# --- MongoDB VM: SSH open to 0.0.0.0/0 (required by the exercise) ---
+# Fix: no inbound SSH; use SSM Session Manager, or restrict 22 to a VPN/admin CIDR.
+AWS-0107
+
+# --- Unrestricted egress (MongoDB VM and EKS node security groups) ---
+# Nodes and the VM need outbound HTTPS for packages, ECR pulls and S3 backups.
+# Fix: VPC endpoints for ECR/S3/STS plus an egress proxy or firewall allowlist.
+AWS-0104
+
+# --- EKS API endpoint public and open to 0.0.0.0/0 (step 7 design trade-off) ---
+# Lets GitHub-hosted runners deploy; every request still needs IAM auth plus an
+# EKS access entry. Fix: private endpoint + self-hosted runner or GitOps (Argo CD).
+AWS-0040
+AWS-0041

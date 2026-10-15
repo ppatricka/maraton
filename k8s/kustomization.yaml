@@ -1,0 +1,14 @@
+# kubectl apply -k k8s/   applies everything below in one go.
+# Kustomize is built into kubectl; here it just lists the files and pins the image.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - rbac.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+images:
+  - name: maraton
+    newName: 335451551970.dkr.ecr.us-east-1.amazonaws.com/maraton
+    newTag: v1 # ECR tags are immutable: every new build needs a new tag

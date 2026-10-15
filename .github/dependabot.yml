@@ -1,0 +1,28 @@
+# Dependabot opens pull requests when dependencies have updates or security fixes.
+# Each PR then goes through the same scans as any other change.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /app
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker # node base image in app/Dockerfile
+    directory: /app
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions # keeps the SHA-pinned actions current
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: terraform
+    directory: /terraform
+    schedule:
+      interval: weekly
+    # MongoDB 4.4 / Ubuntu 20.04 are pinned in scripts, not here; but the EKS module
+    # is held on v20 to stay on AWS provider 5.x, so skip major bumps for now.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]

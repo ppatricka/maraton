@@ -1,0 +1,78 @@
+<%- include('partials/header') %>
+<section class="hero">
+  <div>
+    <span class="kicker">tu diario de series</span>
+    <h1>Hi, <%= user.displayName %>.</h1>
+  </div>
+  <% if (total > 0) { %>
+  <span class="sticker"><%= total %> <%= total === 1 ? 'show' : 'shows' %> on the couch</span>
+  <% } %>
+</section>
+
+<% if (total === 0) { %>
+<section class="card empty">
+  <p>Your diary is empty. Log the first show you're into.</p>
+  <a href="/shows/new" class="btn">+ Log a show</a>
+</section>
+<% } %>
+
+<% if (favorites.length) { %>
+<section>
+  <h2>The Top 4</h2>
+  <div class="top4">
+    <% favorites.forEach(function (s, i) { %>
+    <a class="card poster poster-<%= i + 1 %>" href="/shows/<%= s._id %>/edit">
+      <span class="rank">#<%= i + 1 %></span>
+      <span class="poster-body">
+        <span class="poster-title"><%= s.title %></span>
+        <span class="poster-meta"><%= [s.platform, stars(s.rating)].filter(Boolean).join(' · ') %></span>
+      </span>
+    </a>
+    <% }) %>
+  </div>
+</section>
+<% } %>
+
+<% if (byStatus['Watching'].length) { %>
+<section>
+  <h2><%= statusLabels['Watching'] %></h2>
+  <div class="binge-grid">
+    <% byStatus['Watching'].forEach(function (s, i) { %>
+    <div class="card binge">
+      <span class="ep ep-<%= i % 3 %>" aria-label="Season <%= s.progress.season %>, episode <%= s.progress.episode %>">
+        <span class="ep-season">S<%= s.progress.season %></span>
+        <span class="ep-num">E<%= s.progress.episode %></span>
+      </span>
+      <span class="binge-body">
+        <a class="binge-title" href="/shows/<%= s._id %>/edit"><%= s.title %></a>
+        <% if (s.review) { %>
+        <span>“<%= s.review %>”</span>
+        <% } else { %>
+        <span><%= [s.platform, s.genre, stars(s.rating)].filter(Boolean).join(' · ') %></span>
+        <% } %>
+      </span>
+      <form method="post" action="/shows/<%= s._id %>/next" class="inline">
+        <button class="plus" aria-label="Mark <%= s.title %> episode <%= s.progress.episode + 1 %> as watched">+1</button>
+      </form>
+    </div>
+    <% }) %>
+  </div>
+</section>
+<% } %>
+
+<% var chipStatuses = ['Plan to Watch', 'Completed', 'Dropped'].filter(function (st) { return byStatus[st].length; }); %>
+<% if (chipStatuses.length) { %>
+<div class="chip-sections">
+  <% chipStatuses.forEach(function (status) { %>
+  <section>
+    <h2><%= statusLabels[status] %></h2>
+    <div class="chips">
+      <% byStatus[status].forEach(function (s) { %>
+      <a class="chip" href="/shows/<%= s._id %>/edit"><%= s.title %><%= s.rating ? ' ' + stars(s.rating) : '' %></a>
+      <% }) %>
+    </div>
+  </section>
+  <% }) %>
+</div>
+<% } %>
+<%- include('partials/footer') %>

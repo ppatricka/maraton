@@ -1,0 +1,97 @@
+# -----------------------------------------------------------------------------
+# Pipeline 1: scan the Terraform, then deploy it through HCP Terraform.
+#
+#   pull request -> fmt/validate + IaC scan -> terraform plan (read-only preview)
+#   push to main -> fmt/validate + IaC scan -> terraform apply
+#
+# The runs themselves execute in HCP Terraform (the `cloud` block in versions.tf),
+# which gets AWS credentials through OIDC. GitHub only holds an HCP Terraform
+# API token (secret TF_API_TOKEN), never AWS keys.
+# The bootstrap folder is applied by hand from the laptop and isn't deployed here.
+# -----------------------------------------------------------------------------
+name: iac
+
+on:
+  pull_request:
+    paths: ["terraform/**", ".trivyignore", ".github/workflows/iac.yml"]
+  push:
+    branches: [main]
+    paths: ["terraform/**", ".trivyignore", ".github/workflows/iac.yml"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+# Never run two Terraform jobs against the workspace at the same time.
+concurrency:
+  group: iac
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # All findings go to the Security tab, including the intentional weaknesses.
+      - name: IaC scan (report to Security tab)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: terraform
+          format: sarif
+          output: trivy-iac.sarif
+          exit-code: "0"
+
+      - name: Upload IaC scan results
+        if: always()
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          sarif_file: trivy-iac.sarif
+          category: trivy-iac
+
+      # The gate: fail on any HIGH/CRITICAL misconfiguration that isn't a documented,
+      # accepted risk in .trivyignore (the exercise's required weaknesses).
+      - name: IaC scan (gate)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: terraform
+          format: table
+          severity: CRITICAL,HIGH
+          trivyignores: .trivyignore
+          exit-code: "1"
+          skip-setup-trivy: true
+
+  terraform:
+    needs: scan
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: terraform init
+        run: terraform init -input=false
+
+      - name: terraform validate
+        run: terraform validate
+
+      - name: terraform plan (pull request)
+        if: github.event_name == 'pull_request'
+        run: terraform plan -input=false
+
+      - name: terraform apply (main)
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: terraform apply -input=false -auto-approve

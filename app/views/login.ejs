@@ -1,0 +1,20 @@
+<%- include('partials/header') %>
+<section class="auth">
+  <div class="auth-copy">
+    <span class="kicker">tu diario de series</span>
+    <h1>Your TV diary.</h1>
+    <span class="sticker">just one more episode…</span>
+  </div>
+  <form method="post" action="/login" class="card form">
+    <% if (error) { %><p class="error"><%= error %></p><% } %>
+    <label>Email
+      <input type="email" name="email" value="<%= email %>" required autocomplete="email">
+    </label>
+    <label>Password
+      <input type="password" name="password" required autocomplete="current-password">
+    </label>
+    <button class="btn">Sign in</button>
+    <p class="muted" style="margin: 0">New here? <a href="/register">Create an account</a></p>
+  </form>
+</section>
+<%- include('partials/footer') %>
