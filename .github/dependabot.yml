@@ -1,16 +1,28 @@
 # Dependabot opens pull requests when dependencies have updates or security fixes.
 # Each PR then goes through the same scans as any other change.
+#
+# Major versions are ignored on purpose: the exercise requires MongoDB 4.4, which
+# pins the Node driver to 6.x; the EKS/VPC modules are held on the lines that work
+# with AWS provider 5.x; and major framework upgrades (e.g. Express 5) need code
+# changes. Security fixes still arrive through Dependabot security updates.
 version: 2
 updates:
   - package-ecosystem: npm
     directory: /app
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: docker # node base image in app/Dockerfile
     directory: /app
     schedule:
       interval: weekly
+    ignore:
+      # Stay on Node 22 (LTS); odd-numbered releases like 25 are short-lived.
+      - dependency-name: node
+        versions: [">= 23"]
 
   - package-ecosystem: github-actions # keeps the SHA-pinned actions current
     directory: /
@@ -21,8 +33,10 @@ updates:
     directory: /terraform
     schedule:
       interval: weekly
-    # MongoDB 4.4 / Ubuntu 20.04 are pinned in scripts, not here; but the EKS module
-    # is held on v20 to stay on AWS provider 5.x, so skip major bumps for now.
     ignore:
-      - dependency-name: "*"
-        update-types: ["version-update:semver-major"]
+      - dependency-name: terraform-aws-modules/eks/aws
+        versions: [">= 21"]
+      - dependency-name: terraform-aws-modules/vpc/aws
+        versions: [">= 6"]
+      - dependency-name: hashicorp/aws
+        versions: [">= 6"]
