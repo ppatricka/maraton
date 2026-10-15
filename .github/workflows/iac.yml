@@ -1,12 +1,16 @@
 # -----------------------------------------------------------------------------
-# Pipeline 1: scan the Terraform, then deploy it through HCP Terraform.
+# Pipeline 1: scan the Terraform, then run it in HCP Terraform (API-driven).
 #
-#   pull request -> fmt/validate + IaC scan -> terraform plan (read-only preview)
-#   push to main -> fmt/validate + IaC scan -> terraform apply
+#   pull request -> IaC scan + fmt/validate -> speculative plan in HCP Terraform
+#                   -> plan summary + link posted as a PR comment
+#   push to main -> IaC scan + fmt/validate -> real run in HCP Terraform, labelled
+#                   with the commit -> WAITS for "Confirm & Apply" in the HCP UI
 #
-# The runs themselves execute in HCP Terraform (the `cloud` block in versions.tf),
-# which gets AWS credentials through OIDC. GitHub only holds an HCP Terraform
-# API token (secret TF_API_TOKEN), never AWS keys.
+# Uses HashiCorp's official tfc-workflows-github actions, which call the HCP
+# Terraform API directly: each run shows the commit/PR it came from, and the human
+# approval happens in HCP Terraform (workspace auto-apply is off).
+# HCP Terraform gets AWS credentials through OIDC; GitHub only holds an HCP
+# Terraform API token (secret TF_API_TOKEN), never AWS keys.
 # The bootstrap folder is applied by hand from the laptop and isn't deployed here.
 # -----------------------------------------------------------------------------
 name: iac
@@ -22,14 +26,19 @@ on:
 permissions:
   contents: read
 
-# Never run two Terraform jobs against the workspace at the same time.
+# Never upload two configurations to the workspace at the same time.
 concurrency:
   group: iac
   cancel-in-progress: false
 
+env:
+  TF_CLOUD_ORGANIZATION: patriciarojas-sandbox
+  TF_WORKSPACE: maraton-aws
+  CONFIG_DIRECTORY: ./terraform
+
 jobs:
   scan:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       security-events: write
@@ -66,32 +75,117 @@ jobs:
           exit-code: "1"
           skip-setup-trivy: true
 
-  terraform:
-    needs: scan
-    runs-on: ubuntu-latest
+  # Quick local checks; -backend=false means no HCP token is needed here.
+  lint:
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: terraform
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false -input=false
+      - run: terraform validate
+
+  # ---- Pull requests: speculative plan, summarised on the PR ----
+  plan:
+    if: github.event_name == 'pull_request'
+    needs: [scan, lint]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write # to comment the plan summary on the PR
+    env:
+      TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Upload configuration (speculative)
+        id: upload
+        uses: hashicorp/tfc-workflows-github/actions/upload-configuration@8e08d1ba957673f5fbf971a22b3219639dc45661 # v1.3.2
         with:
-          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+          workspace: ${{ env.TF_WORKSPACE }}
+          directory: ${{ env.CONFIG_DIRECTORY }}
+          speculative: true
 
-      - name: terraform fmt
-        run: terraform fmt -check -recursive
+      - name: Create plan-only run
+        id: run
+        uses: hashicorp/tfc-workflows-github/actions/create-run@8e08d1ba957673f5fbf971a22b3219639dc45661 # v1.3.2
+        with:
+          workspace: ${{ env.TF_WORKSPACE }}
+          configuration_version: ${{ steps.upload.outputs.configuration_version_id }}
+          plan_only: true
+          message: "PR #${{ github.event.pull_request.number }}: ${{ github.event.pull_request.title }} (${{ github.event.pull_request.head.sha }})"
 
-      - name: terraform init
-        run: terraform init -input=false
+      - name: Get plan summary
+        id: plan
+        uses: hashicorp/tfc-workflows-github/actions/plan-output@8e08d1ba957673f5fbf971a22b3219639dc45661 # v1.3.2
+        with:
+          plan: ${{ steps.run.outputs.plan_id }}
 
-      - name: terraform validate
-        run: terraform validate
+      # One comment per PR, updated on every push to the branch.
+      - name: Comment plan on the PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          BODY: |
+            #### HCP Terraform plan for `${{ env.TF_WORKSPACE }}`: ${{ steps.plan.outputs.plan_status }}
 
-      - name: terraform plan (pull request)
-        if: github.event_name == 'pull_request'
-        run: terraform plan -input=false
+            | Add | Change | Destroy |
+            | --- | --- | --- |
+            | ${{ steps.plan.outputs.add }} | ${{ steps.plan.outputs.change }} | ${{ steps.plan.outputs.destroy }} |
 
-      - name: terraform apply (main)
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        run: terraform apply -input=false -auto-approve
+            [View the plan in HCP Terraform](${{ steps.run.outputs.run_link }}) · commit `${{ github.event.pull_request.head.sha }}`
+        run: gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body "$BODY" --edit-last --create-if-none
+
+  # ---- main: real run, applied by a human in HCP Terraform ----
+  run:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: [scan, lint]
+    runs-on: ubuntu-24.04
+    env:
+      TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Upload configuration
+        id: upload
+        uses: hashicorp/tfc-workflows-github/actions/upload-configuration@8e08d1ba957673f5fbf971a22b3219639dc45661 # v1.3.2
+        with:
+          workspace: ${{ env.TF_WORKSPACE }}
+          directory: ${{ env.CONFIG_DIRECTORY }}
+
+      # First line of the commit message only (squash merges have long bodies).
+      - name: Run message
+        id: msg
+        env:
+          COMMIT_MSG: ${{ github.event.head_commit.message || 'manual run' }}
+        run: echo "title=$(printf '%s\n' "$COMMIT_MSG" | head -n1 | cut -c1-120)" >> "$GITHUB_OUTPUT"
+
+      - name: Create run (waits for approval in HCP Terraform)
+        id: run
+        uses: hashicorp/tfc-workflows-github/actions/create-run@8e08d1ba957673f5fbf971a22b3219639dc45661 # v1.3.2
+        with:
+          workspace: ${{ env.TF_WORKSPACE }}
+          configuration_version: ${{ steps.upload.outputs.configuration_version_id }}
+          message: "main @ ${{ github.sha }}: ${{ steps.msg.outputs.title }}"
+
+      - name: Get plan summary
+        id: plan
+        uses: hashicorp/tfc-workflows-github/actions/plan-output@8e08d1ba957673f5fbf971a22b3219639dc45661 # v1.3.2
+        with:
+          plan: ${{ steps.run.outputs.plan_id }}
+
+      - name: Summary
+        run: |
+          {
+            echo "### HCP Terraform run for \`${TF_WORKSPACE}\`"
+            echo ""
+            echo "| Add | Change | Destroy |"
+            echo "| --- | --- | --- |"
+            echo "| ${{ steps.plan.outputs.add }} | ${{ steps.plan.outputs.change }} | ${{ steps.plan.outputs.destroy }} |"
+            echo ""
+            echo "Run status: **${{ steps.run.outputs.run_status }}**. If there are changes, review the plan and"
+            echo "click **Confirm & Apply** in HCP Terraform: ${{ steps.run.outputs.run_link }}"
+          } >> "$GITHUB_STEP_SUMMARY"
