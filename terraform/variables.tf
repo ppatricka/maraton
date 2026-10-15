@@ -67,3 +67,9 @@ variable "github_repository" {
   type        = string
   default     = "ppatricka/maraton"
 }
+
+variable "github_oidc_subject_prefix" {
+  description = "Start of the GitHub OIDC 'sub' claim for the repo (immutable format: repo:OWNER@OWNER_ID/REPO@REPO_ID). Check with: gh api repos/OWNER/REPO/actions/oidc/customization/sub"
+  type        = string
+  default     = "repo:ppatricka@72053457/maraton@1420235756"
+}
