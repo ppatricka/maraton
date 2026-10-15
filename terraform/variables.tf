@@ -65,5 +65,5 @@ variable "ssh_public_key" {
 variable "github_repository" {
   description = "GitHub repo (owner/name) whose main branch may deploy the app"
   type        = string
-  default     = "patriciarojasp/maraton"
+  default     = "ppatricka/maraton"
 }
