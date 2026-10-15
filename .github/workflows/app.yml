@@ -32,7 +32,7 @@ env:
 
 jobs:
   build-scan-deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # pinned: ubuntu-latest moves to 26 on 2026-10-19
     permissions:
       contents: read
       id-token: write # lets the job request a GitHub OIDC token for AWS
@@ -58,7 +58,7 @@ jobs:
         run: |
           docker build \
             --build-arg CANDIDATE_NAME="Patricia Rojas Perez" \
-            -t maraton:${IMAGE_TAG} app/
+            -t "maraton:${IMAGE_TAG}" app/
 
       # Results in the Security tab (never fails the build on its own).
       - name: Scan image (report to Security tab)
@@ -108,8 +108,8 @@ jobs:
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
-          docker tag maraton:${IMAGE_TAG} ${REGISTRY}/maraton:${IMAGE_TAG}
-          docker push ${REGISTRY}/maraton:${IMAGE_TAG}
+          docker tag "maraton:${IMAGE_TAG}" "${REGISTRY}/maraton:${IMAGE_TAG}"
+          docker push "${REGISTRY}/maraton:${IMAGE_TAG}"
 
       - name: Set up kubectl
         if: github.ref == 'refs/heads/main'
@@ -122,12 +122,12 @@ jobs:
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
-          aws eks update-kubeconfig --region ${AWS_REGION} --name ${CLUSTER_NAME}
-          kubectl -n ${NAMESPACE} set image deployment/maraton maraton=${REGISTRY}/maraton:${IMAGE_TAG}
-          kubectl -n ${NAMESPACE} rollout status deployment/maraton --timeout=180s
+          aws eks update-kubeconfig --region "${AWS_REGION}" --name "${CLUSTER_NAME}"
+          kubectl -n "${NAMESPACE}" set image deployment/maraton "maraton=${REGISTRY}/maraton:${IMAGE_TAG}"
+          kubectl -n "${NAMESPACE}" rollout status deployment/maraton --timeout=180s
 
       - name: Verify running image and wizexercise.txt
         if: github.ref == 'refs/heads/main'
         run: |
-          kubectl -n ${NAMESPACE} get deployment maraton -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
-          kubectl -n ${NAMESPACE} exec deploy/maraton -- cat /app/wizexercise.txt
+          kubectl -n "${NAMESPACE}" get deployment maraton -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
+          kubectl -n "${NAMESPACE}" exec deploy/maraton -- cat /app/wizexercise.txt
