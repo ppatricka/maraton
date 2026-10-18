@@ -154,3 +154,11 @@ resource "aws_instance" "mongodb" {
     Name = "${var.project}-mongodb"
   }
 }
+
+# Lets the SSM agent register the VM so Amazon Inspector can scan it for
+# vulnerabilities (detective.tf). It also enables SSM Session Manager, which is
+# the production replacement for the open SSH port.
+resource "aws_iam_role_policy_attachment" "mongodb_ssm" {
+  role       = aws_iam_role.mongodb.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}

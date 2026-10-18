@@ -22,8 +22,8 @@ variable "hcp_project" {
   default     = "wiz"
 }
 
-variable "hcp_workspace" {
-  description = "HCP Terraform workspace that will deploy the exercise"
-  type        = string
-  default     = "maraton-aws"
+variable "hcp_workspaces" {
+  description = "HCP Terraform workspaces whose runs may assume the role (app environment + security baseline)"
+  type        = list(string)
+  default     = ["maraton-aws", "maraton-security"]
 }

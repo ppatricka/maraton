@@ -15,7 +15,18 @@ terraform/
   outputs.tf      IDs later steps use
 ```
 
-Coming next: `eks.tf`, `ecr.tf`, the MongoDB VM, the backup bucket, and the AWS security services.
+## Three configurations, three HCP Terraform workspaces (project `wiz`)
+
+| Folder | Workspace | Runs where | What it manages |
+| --- | --- | --- | --- |
+| `bootstrap/` | `maraton-bootstrap` | Locally (Local execution mode) | OIDC trust + run role for HCP Terraform |
+| `.` (this folder) | `maraton-aws` | HCP, via the `iac` pipeline | App environment: VPC, EKS, ECR, MongoDB VM, backups |
+| `security/` | `maraton-security` | HCP, via the `iac` pipeline | Security baseline: CloudTrail, audit bucket, Config, Security Hub, Inspector, GuardDuty |
+
+The security baseline has its own state and lifecycle, so the app environment can be destroyed and
+rebuilt while audit logging and detection keep running. It refers to the backup bucket by naming
+convention rather than by reading the app workspace's state, so the two stay independent.
+`.terraformignore` keeps `security/` and `bootstrap/` out of the `maraton-aws` upload.
 
 ## One-time setup
 
