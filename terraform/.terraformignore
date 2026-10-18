@@ -1,0 +1,5 @@
+# Files HCP Terraform should NOT receive when this folder is uploaded for the
+# maraton-aws workspace: the other two configurations have their own workspaces.
+security/
+bootstrap/
+.terraform/

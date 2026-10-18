@@ -1,5 +1,19 @@
 # Everything for the Maratón app lives in its own namespace.
+#
+# PREVENTIVE CONTROL: Pod Security Admission (built into Kubernetes/EKS).
+# "enforce: restricted" makes the API server REJECT any pod in this namespace that
+# doesn't meet the Restricted standard: no privileged containers, no host
+# namespaces/paths, must run as non-root, no privilege escalation, all Linux
+# capabilities dropped, seccomp on. This blocks the classic next step after
+# compromising the app (whose service account is cluster-admin): launching a
+# privileged pod to break out onto the node.
+# The app's own pods comply (see the securityContext in deployment.yaml).
 apiVersion: v1
 kind: Namespace
 metadata:
   name: maraton
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted # kubectl prints a warning too
+    pod-security.kubernetes.io/audit: restricted # and violations are recorded in the EKS audit log

@@ -52,7 +52,7 @@ resource "aws_iam_openid_connect_provider" "hcp_terraform" {
   thumbprint_list = [data.tls_certificate.hcp_terraform.certificates[0].sha1_fingerprint]
 }
 
-# Only runs from YOUR organization, project and workspace may assume the role.
+# Only runs from YOUR organization, project and listed workspaces may assume the role.
 data "aws_iam_policy_document" "hcp_terraform_trust" {
   statement {
     effect  = "Allow"
@@ -73,7 +73,8 @@ data "aws_iam_policy_document" "hcp_terraform_trust" {
       test     = "StringLike"
       variable = "${var.hcp_terraform_hostname}:sub"
       values = [
-        "organization:${var.hcp_organization}:project:${var.hcp_project}:workspace:${var.hcp_workspace}:run_phase:*"
+        for ws in var.hcp_workspaces :
+        "organization:${var.hcp_organization}:project:${var.hcp_project}:workspace:${ws}:run_phase:*"
       ]
     }
   }
@@ -81,7 +82,7 @@ data "aws_iam_policy_document" "hcp_terraform_trust" {
 
 resource "aws_iam_role" "hcp_terraform_run" {
   name                 = "maraton-hcp-terraform-run"
-  description          = "Assumed by HCP Terraform runs for the ${var.hcp_workspace} workspace"
+  description          = "Assumed by HCP Terraform runs for the ${join(", ", var.hcp_workspaces)} workspaces"
   assume_role_policy   = data.aws_iam_policy_document.hcp_terraform_trust.json
   max_session_duration = 3600
 }

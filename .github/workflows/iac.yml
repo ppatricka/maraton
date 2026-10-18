@@ -1,6 +1,10 @@
 # -----------------------------------------------------------------------------
 # Pipeline 1: scan the Terraform, then run it in HCP Terraform (API-driven).
 #
+# Two workspaces, handled by a matrix (each gets its own plan, PR comment and run):
+#   terraform/           -> maraton-aws       (app environment)
+#   terraform/security/  -> maraton-security  (security baseline)
+#
 #   pull request -> IaC scan + fmt/validate -> speculative plan in HCP Terraform
 #                   -> plan summary + link posted as a PR comment
 #   push to main -> IaC scan + fmt/validate -> real run in HCP Terraform, labelled
@@ -26,15 +30,13 @@ on:
 permissions:
   contents: read
 
-# Never upload two configurations to the workspace at the same time.
+# Never run two copies of this pipeline at the same time.
 concurrency:
   group: iac
   cancel-in-progress: false
 
 env:
   TF_CLOUD_ORGANIZATION: patriciarojas-sandbox
-  TF_WORKSPACE: maraton-aws
-  CONFIG_DIRECTORY: ./terraform
 
 jobs:
   scan:
@@ -78,9 +80,12 @@ jobs:
   # Quick local checks; -backend=false means no HCP token is needed here.
   lint:
     runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        directory: [terraform, terraform/security]
     defaults:
       run:
-        working-directory: terraform
+        working-directory: ${{ matrix.directory }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
@@ -88,11 +93,19 @@ jobs:
       - run: terraform init -backend=false -input=false
       - run: terraform validate
 
-  # ---- Pull requests: speculative plan, summarised on the PR ----
+  # ---- Pull requests: speculative plan per workspace, summarised on the PR ----
   plan:
     if: github.event_name == 'pull_request'
     needs: [scan, lint]
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - workspace: maraton-aws
+            directory: ./terraform
+          - workspace: maraton-security
+            directory: ./terraform/security
     permissions:
       contents: read
       pull-requests: write # to comment the plan summary on the PR
@@ -105,15 +118,15 @@ jobs:
         id: upload
         uses: hashicorp/tfc-workflows-github/actions/upload-configuration@8e08d1ba957673f5fbf971a22b3219639dc45661 # v1.3.2
         with:
-          workspace: ${{ env.TF_WORKSPACE }}
-          directory: ${{ env.CONFIG_DIRECTORY }}
+          workspace: ${{ matrix.workspace }}
+          directory: ${{ matrix.directory }}
           speculative: true
 
       - name: Create plan-only run
         id: run
         uses: hashicorp/tfc-workflows-github/actions/create-run@8e08d1ba957673f5fbf971a22b3219639dc45661 # v1.3.2
         with:
-          workspace: ${{ env.TF_WORKSPACE }}
+          workspace: ${{ matrix.workspace }}
           configuration_version: ${{ steps.upload.outputs.configuration_version_id }}
           plan_only: true
           message: "PR #${{ github.event.pull_request.number }}: ${{ github.event.pull_request.title }} (${{ github.event.pull_request.head.sha }})"
@@ -124,26 +137,43 @@ jobs:
         with:
           plan: ${{ steps.run.outputs.plan_id }}
 
-      # One comment per PR, updated on every push to the branch.
+      # One comment per workspace per PR (found by a hidden marker), updated on every push.
       - name: Comment plan on the PR
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
+          MARKER: "<!-- hcp-plan:${{ matrix.workspace }} -->"
           BODY: |
-            #### HCP Terraform plan for `${{ env.TF_WORKSPACE }}`: ${{ steps.plan.outputs.plan_status }}
+            <!-- hcp-plan:${{ matrix.workspace }} -->
+            #### HCP Terraform plan for `${{ matrix.workspace }}`: ${{ steps.plan.outputs.plan_status }}
 
             | Add | Change | Destroy |
             | --- | --- | --- |
             | ${{ steps.plan.outputs.add }} | ${{ steps.plan.outputs.change }} | ${{ steps.plan.outputs.destroy }} |
 
             [View the plan in HCP Terraform](${{ steps.run.outputs.run_link }}) · commit `${{ github.event.pull_request.head.sha }}`
-        run: gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body "$BODY" --edit-last --create-if-none
+        run: |
+          ID=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" --paginate \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | contains(\"${MARKER}\"))) | .id" | tail -n1)
+          if [ -n "$ID" ]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${ID}" -f body="$BODY" > /dev/null
+          else
+            gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body "$BODY"
+          fi
 
-  # ---- main: real run, applied by a human in HCP Terraform ----
+  # ---- main: real run per workspace, applied by a human in HCP Terraform ----
   run:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: [scan, lint]
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - workspace: maraton-aws
+            directory: ./terraform
+          - workspace: maraton-security
+            directory: ./terraform/security
     env:
       TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
     steps:
@@ -153,8 +183,8 @@ jobs:
         id: upload
         uses: hashicorp/tfc-workflows-github/actions/upload-configuration@8e08d1ba957673f5fbf971a22b3219639dc45661 # v1.3.2
         with:
-          workspace: ${{ env.TF_WORKSPACE }}
-          directory: ${{ env.CONFIG_DIRECTORY }}
+          workspace: ${{ matrix.workspace }}
+          directory: ${{ matrix.directory }}
 
       # First line of the commit message only (squash merges have long bodies).
       - name: Run message
@@ -167,7 +197,7 @@ jobs:
         id: run
         uses: hashicorp/tfc-workflows-github/actions/create-run@8e08d1ba957673f5fbf971a22b3219639dc45661 # v1.3.2
         with:
-          workspace: ${{ env.TF_WORKSPACE }}
+          workspace: ${{ matrix.workspace }}
           configuration_version: ${{ steps.upload.outputs.configuration_version_id }}
           message: "main @ ${{ github.sha }}: ${{ steps.msg.outputs.title }}"
 
@@ -178,9 +208,11 @@ jobs:
           plan: ${{ steps.run.outputs.plan_id }}
 
       - name: Summary
+        env:
+          WORKSPACE: ${{ matrix.workspace }}
         run: |
           {
-            echo "### HCP Terraform run for \`${TF_WORKSPACE}\`"
+            echo "### HCP Terraform run for \`${WORKSPACE}\`"
             echo ""
             echo "| Add | Change | Destroy |"
             echo "| --- | --- | --- |"
